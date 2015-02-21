@@ -1,0 +1,153 @@
+---
+title: "Machine Learning - "
+author: "David Quer López"
+date: "21 Feb 2015"
+output: html_document
+---
+
+The goal of your project is to predict activity quality from activity monitors.
+
+This is the "classe" variable in the training set. You may use any of the other variables to predict with. You should create a report describing how you built your model, how you used cross validation, what you think the expected out of sample error is, and why you made the choices you did. You will also use your prediction model to predict 20 different test cases.
+
+```{r, message=FALSE}
+library(caret)
+library(randomForest)
+library(gbm)
+library(rpart)
+library(MASS)
+```
+
+### Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement  a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. 
+
+In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: <http://groupware.les.inf.puc-rio.br/har> (see the section on the Weight Lifting Exercise Dataset)."
+
+### Data
+
+The data for this project come from this source: <http://groupware.les.inf.puc-rio.br/har>. The information has been generously provided for use use in this cousera course by the authors, Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. They have allowed the use of their paper “Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human ’13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+The training data for this project are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv>
+
+The test data are available here:
+
+<https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv>
+
+Both were downloaded for use in this assignment on September 3, 2015 at 6:50am GMT + 8hours.
+
+#### Load and clean the data
+
+From the working directory we load the testing and training raw datasets.
+
+```{r}
+train_set <- read.csv('data/pml-training.csv')
+tests_set <- read.csv('data/pml-testing.csv')
+```
+
+Before start we clean the data by removing the columns with NAs.
+
+```{r}
+train_set <- train_set[,colSums(is.na(train_set)) == 0]
+tests_set <- tests_set[,colSums(is.na(tests_set)) == 0]
+```
+
+We also remove variables, from both datasets, that are no use to fitting our model.
+
+```{r}
+train_set <- train_set[,-c(1:7)]
+tests_set <- tests_set[,-c(1:7)]
+```
+
+An finally we remove from the near zero variance predictors from the training set.
+
+```{r}
+nzvc <- nearZeroVar(train_set, saveMetrics = TRUE)
+train_set <- train_set[, nzvc$nzv==FALSE]
+```
+
+If we take a look at the dimensions of the resulting datasets, the training set has 19622 obs. and 53 vars and the testing set has 19622 obs. and 53 vars, considering 52 predictors and 1 outcome "classes".
+
+#### Create a cross-validation set from training data
+
+In order to perform cross-validation, we split the training set into a training subset (60%) and cross-validation subset (40%).
+
+```{r}
+set.seed(1)
+index <- createDataPartition(y=train_set$classe, p=0.6, list=FALSE)
+train_subset <- train_set[index, ] 
+cross_subset <- train_set[-index, ]
+```
+
+Now we choose the model for machine learning by training it in the training subset and validating it in the cross-validation subset.
+
+### The machine learning model (training)
+
+We use three different methods for building our models; random forests (rf), gradient boosting models (gbm) and linear discriminant analysis (lda).
+
+```{r, echo=FALSE}
+library(parallel)
+library(doParallel)
+registerDoParallel(makeCluster(detectCores()))
+```
+
+```{r, results='hide'}
+m_rf <- train(classe ~ ., method = 'rf', data = train_subset, verbose=FALSE)   
+m_gbm <- train(classe ~ ., method = 'gbm', data = train_subset, verbose=FALSE)
+m_lda <- train(classe ~ ., method = 'lda', data = train_subset, verbose=FALSE)
+```
+
+### The machine learning model (model selection and cross-validation)
+
+Selecting the model by Accuracy is obtained by cross validating it with the cross validation subset.
+
+```{r}
+pred_rf <- predict(m_rf, cross_subset); confusionMatrix(pred_rf, cross_subset$classe)$overall
+```
+
+```{r}
+pred_gbm <- predict(m_gbm, cross_subset); confusionMatrix(pred_gbm, cross_subset$classe)$overall
+```
+
+```{r}
+pred_lda <- predict(m_lda, cross_subset); confusionMatrix(pred_lda, cross_subset$classe)$overall
+```
+
+We can clearly see that the random forest model (rf) seems to be the best model, performing also very well on the cross-validation set, with an Accuracy of 99%.
+
+### The machine learning model (importance of variables)
+
+We can also look at the importance of every variable in the model on how much of the outcome is contributing to explain every predictor. And, if it's necessary we can drop out some variables from the model.
+
+```{r}
+imp_var <- varImp(m_rf)
+plot(imp_var, main='Importance of variables')
+```
+
+### The machine learning model (testing)
+
+Finally we predict with our model on the testing set.
+
+```{r}
+predict_test <- predict(m_rf, tests_set, type="raw")
+predict_test
+```
+
+And we submit the results using the provided function
+
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+##pml_write_files(predict_test)
+```
+
+
+
+
